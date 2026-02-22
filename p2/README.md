@@ -82,7 +82,17 @@ mkdir uploads temp
 
 # Copy environment file (optional)
 cp .env.example .env
+
+# (Optional) Configure Gemini API for AI Interview feature
+# Edit .env and add your Gemini API key
+# See GEMINI_SETUP.md for detailed instructions
 ```
+
+**Optional - Gemini API Setup:**
+For enhanced AI-powered interview questions and answer analysis, configure Google Gemini API:
+1. Get API key from https://makersuite.google.com/app/apikey
+2. Add to `backend/.env`: `GEMINI_API_KEY=your_key_here`
+3. See `GEMINI_SETUP.md` for complete guide
 
 **Note:** First run will download the Whisper AI model (~140MB). Ensure you have internet connection.
 
