@@ -25,6 +25,8 @@ function LiveInterview() {
   const [isSaving, setIsSaving] = useState(false)
   const [sessionId, setSessionId] = useState(null)
   const [wsConnected, setWsConnected] = useState(false)
+  const [faceDetectionCount, setFaceDetectionCount] = useState(0)
+  const [totalFramesProcessed, setTotalFramesProcessed] = useState(0)
   
   // Results state
   const [overallResults, setOverallResults] = useState(null)
@@ -75,17 +77,29 @@ function LiveInterview() {
 
   const startInterview = async () => {
     try {
-      // Try to get camera and microphone
+      // Try to get camera and microphone with higher quality settings
       let stream = null
       try {
         stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { width: { ideal: 1280 }, height: { ideal: 720 } }, 
-          audio: { echoCancellation: true, noiseSuppression: true }
+          video: { 
+            width: { ideal: 1920, min: 1280 }, 
+            height: { ideal: 1080, min: 720 },
+            facingMode: 'user',
+            frameRate: { ideal: 30 }
+          }, 
+          audio: { 
+            echoCancellation: true, 
+            noiseSuppression: true,
+            autoGainControl: true,
+            sampleRate: 48000
+          }
         })
         
         streamRef.current = stream
         if (videoRef.current) {
           videoRef.current.srcObject = stream
+          // Mirror the video for natural self-view
+          videoRef.current.style.transform = 'scaleX(-1)'
         }
 
         // Generate session ID for facial analysis
@@ -107,6 +121,10 @@ function LiveInterview() {
             const data = JSON.parse(event.data)
             if (data.type === 'metrics') {
               setMetrics(data.data)
+              setTotalFramesProcessed(prev => prev + 1)
+              if (!data.data.no_face) {
+                setFaceDetectionCount(prev => prev + 1)
+              }
             }
           }
           wsRef.current.onerror = () => {
@@ -116,17 +134,21 @@ function LiveInterview() {
           console.log('Could not connect WebSocket - continuing without facial analysis')
         }
 
-        // Send video frames if WebSocket connected
+        // Send video frames if WebSocket connected (higher frequency for better accuracy)
         const canvas = document.createElement('canvas')
         const ctx = canvas.getContext('2d')
         frameIntervalRef.current = setInterval(() => {
           if (videoRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
             canvas.width = videoRef.current.videoWidth
             canvas.height = videoRef.current.videoHeight
-            ctx.drawImage(videoRef.current, 0, 0)
-            wsRef.current.send(JSON.stringify({ frame: canvas.toDataURL('image/jpeg', 0.8) }))
+            // Flip the canvas horizontally to match the mirrored video
+            ctx.save()
+            ctx.scale(-1, 1)
+            ctx.drawImage(videoRef.current, -canvas.width, 0, canvas.width, canvas.height)
+            ctx.restore()
+            wsRef.current.send(JSON.stringify({ frame: canvas.toDataURL('image/jpeg', 0.85) }))
           }
-        }, 200)
+        }, 150)  // Send frames every 150ms for better accuracy
       } catch (mediaError) {
         console.error('Media access error:', mediaError)
         const proceed = confirm(
@@ -188,6 +210,26 @@ function LiveInterview() {
   }
 
   const finishQuestion = async () => {
+    // Check face detection rate
+    const facePresenceRate = totalFramesProcessed > 0 ? faceDetectionCount / totalFramesProcessed : 0
+    
+    if (facePresenceRate < 0.5) {
+      const proceed = confirm(
+        `⚠️ WARNING: Your face was only detected in ${(facePresenceRate * 100).toFixed(0)}% of frames.\n\n` +
+        `This will result in a score of 0 for this question.\n\n` +
+        `Recommendations:\n` +
+        `• Ensure your camera is not blocked\n` +
+        `• Improve lighting on your face\n` +
+        `• Position yourself clearly in frame\n` +
+        `• Check camera permissions\n\n` +
+        `Do you want to continue anyway?`
+      )
+      
+      if (!proceed) {
+        return
+      }
+    }
+    
     if (duration < 5) {
       alert('Please answer for at least 5 seconds')
       return
@@ -258,6 +300,9 @@ function LiveInterview() {
       // Move to next question or finish
       if (currentQuestionIndex < questions.length - 1) {
         setCurrentQuestionIndex(currentQuestionIndex + 1)
+        // Reset face detection counters for next question
+        setFaceDetectionCount(0)
+        setTotalFramesProcessed(0)
         setTimeout(() => startQuestionRecording(), 1000)
       } else {
         finishInterview()
@@ -434,49 +479,200 @@ function LiveInterview() {
           </div>
           
           {/* Video Preview */}
-          <div className="relative bg-gray-900 rounded-lg overflow-hidden" style={{ height: '400px' }}>
+          <div className="relative bg-gray-900 rounded-lg overflow-hidden shadow-2xl" style={{ height: '480px' }}>
             <video
               ref={videoRef}
               autoPlay
               playsInline
               muted
               className="w-full h-full object-cover"
+              style={{ filter: 'brightness(1.05) contrast(1.05)' }}
             />
             {!isRecording && answers.length === 0 && (
               <div className="absolute inset-0 flex items-center justify-center bg-gray-800 bg-opacity-75">
                 <div className="text-center">
+                  <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-blue-600 flex items-center justify-center">
+                    <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  </div>
                   <p className="text-white text-lg mb-2">Ready to start your interview</p>
                   <p className="text-gray-400 text-sm">Click "Start Interview" below</p>
                 </div>
               </div>
             )}
             {isRecording && metrics?.no_face && (
-              <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-yellow-500 text-white px-4 py-2 rounded-md">
-                ⚠️ No face detected
+              <div className="absolute inset-0 flex items-center justify-center bg-red-900 bg-opacity-90">
+                <div className="text-center p-8">
+                  <svg className="w-20 h-20 text-white mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <p className="text-white text-2xl font-bold mb-2">⚠️ Camera Blocked or No Face Detected</p>
+                  <p className="text-white text-lg mb-4">Your interview cannot be scored without visible face detection</p>
+                  <div className="bg-white bg-opacity-20 rounded-lg p-4 text-left">
+                    <p className="text-white font-semibold mb-2">Please ensure:</p>
+                    <ul className="text-white space-y-1">
+                      <li>• Camera is not blocked or covered</li>
+                      <li>• Your face is clearly visible</li>
+                      <li>• Adequate lighting on your face</li>
+                      <li>• You are centered in the frame</li>
+                      <li>• Camera permissions are granted</li>
+                    </ul>
+                  </div>
+                  <p className="text-yellow-300 text-sm mt-4 font-semibold">
+                    ⚠️ Scores will be 0 if face is not detected during recording
+                  </p>
+                </div>
+              </div>
+            )}
+            {isRecording && metrics && !metrics.no_face && (
+              <div className="absolute top-4 right-4 flex flex-col gap-2">
+                {metrics.eye_contact < 0.5 && (
+                  <div className="bg-blue-600 bg-opacity-90 text-white px-3 py-1 rounded-md text-sm">
+                    💡 Look at the camera
+                  </div>
+                )}
+                {metrics.centering && metrics.centering < 0.6 && (
+                  <div className="bg-purple-600 bg-opacity-90 text-white px-3 py-1 rounded-md text-sm">
+                    💡 Center yourself in frame
+                  </div>
+                )}
               </div>
             )}
           </div>
 
           {/* Real-time Metrics */}
           {metrics && !metrics.no_face && (
-            <div className="grid grid-cols-3 gap-4 p-4 bg-blue-50 rounded-lg">
+            <div className="grid grid-cols-3 gap-4 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200">
               <div className="text-center">
-                <p className="text-sm text-gray-600">Eye Contact</p>
-                <p className="text-2xl font-bold text-blue-600">
-                  {(metrics.eye_contact * 100).toFixed(0)}%
-                </p>
+                <p className="text-xs text-gray-600 mb-1">Confidence</p>
+                <div className="relative w-16 h-16 mx-auto">
+                  <svg className="transform -rotate-90 w-16 h-16">
+                    <circle
+                      cx="32"
+                      cy="32"
+                      r="28"
+                      stroke="#e5e7eb"
+                      strokeWidth="6"
+                      fill="none"
+                    />
+                    <circle
+                      cx="32"
+                      cy="32"
+                      r="28"
+                      stroke="#3b82f6"
+                      strokeWidth="6"
+                      fill="none"
+                      strokeDasharray={`${(metrics.eye_contact * 100 * 175.93) / 100} 175.93`}
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-lg font-bold text-blue-600">
+                      {(metrics.eye_contact * 100).toFixed(0)}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Eye Contact</p>
               </div>
               <div className="text-center">
-                <p className="text-sm text-gray-600">Stability</p>
-                <p className="text-2xl font-bold text-blue-600">
-                  {(metrics.head_stability * 100).toFixed(0)}%
-                </p>
+                <p className="text-xs text-gray-600 mb-1">Clarity</p>
+                <div className="relative w-16 h-16 mx-auto">
+                  <svg className="transform -rotate-90 w-16 h-16">
+                    <circle
+                      cx="32"
+                      cy="32"
+                      r="28"
+                      stroke="#e5e7eb"
+                      strokeWidth="6"
+                      fill="none"
+                    />
+                    <circle
+                      cx="32"
+                      cy="32"
+                      r="28"
+                      stroke="#8b5cf6"
+                      strokeWidth="6"
+                      fill="none"
+                      strokeDasharray={`${(metrics.head_stability * 100 * 175.93) / 100} 175.93`}
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-lg font-bold text-purple-600">
+                      {(metrics.head_stability * 100).toFixed(0)}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Composure</p>
               </div>
               <div className="text-center">
-                <p className="text-sm text-gray-600">Smile</p>
-                <p className="text-2xl font-bold text-blue-600">
-                  {(metrics.smile * 100).toFixed(0)}%
-                </p>
+                <p className="text-xs text-gray-600 mb-1">Engagement</p>
+                <div className="relative w-16 h-16 mx-auto">
+                  <svg className="transform -rotate-90 w-16 h-16">
+                    <circle
+                      cx="32"
+                      cy="32"
+                      r="28"
+                      stroke="#e5e7eb"
+                      strokeWidth="6"
+                      fill="none"
+                    />
+                    <circle
+                      cx="32"
+                      cy="32"
+                      r="28"
+                      stroke="#10b981"
+                      strokeWidth="6"
+                      fill="none"
+                      strokeDasharray={`${((metrics.engagement || metrics.smile) * 100 * 175.93) / 100} 175.93`}
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-lg font-bold text-green-600">
+                      {((metrics.engagement || metrics.smile) * 100).toFixed(0)}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Expression</p>
+              </div>
+            </div>
+          )}
+          
+          {/* Face Detection Status */}
+          {isRecording && totalFramesProcessed > 10 && (
+            <div className={`p-3 rounded-lg border ${
+              (faceDetectionCount / totalFramesProcessed) >= 0.8 ? 'bg-green-50 border-green-200' :
+              (faceDetectionCount / totalFramesProcessed) >= 0.5 ? 'bg-yellow-50 border-yellow-200' :
+              'bg-red-50 border-red-200'
+            }`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <svg className={`w-5 h-5 ${
+                    (faceDetectionCount / totalFramesProcessed) >= 0.8 ? 'text-green-600' :
+                    (faceDetectionCount / totalFramesProcessed) >= 0.5 ? 'text-yellow-600' :
+                    'text-red-600'
+                  }`} fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  <span className={`text-sm font-semibold ${
+                    (faceDetectionCount / totalFramesProcessed) >= 0.8 ? 'text-green-800' :
+                    (faceDetectionCount / totalFramesProcessed) >= 0.5 ? 'text-yellow-800' :
+                    'text-red-800'
+                  }`}>
+                    Face Detection: {((faceDetectionCount / totalFramesProcessed) * 100).toFixed(0)}%
+                  </span>
+                </div>
+                <span className={`text-xs ${
+                  (faceDetectionCount / totalFramesProcessed) >= 0.8 ? 'text-green-600' :
+                  (faceDetectionCount / totalFramesProcessed) >= 0.5 ? 'text-yellow-600' :
+                  'text-red-600'
+                }`}>
+                  {(faceDetectionCount / totalFramesProcessed) >= 0.8 ? 'Excellent' :
+                   (faceDetectionCount / totalFramesProcessed) >= 0.5 ? 'Fair - Improve positioning' :
+                   'Poor - Scores will be 0'}
+                </span>
               </div>
             </div>
           )}
@@ -524,12 +720,19 @@ function LiveInterview() {
             </div>
           )}
 
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <p className="text-sm text-gray-700 font-semibold mb-2">📌 Tips:</p>
+          <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-4 rounded-lg border border-blue-200">
+            <p className="text-sm text-gray-700 font-semibold mb-2 flex items-center gap-2">
+              <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Interview Tips:
+            </p>
             <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
-              <li>Look at the camera for eye contact</li>
-              <li>Speak clearly and avoid filler words</li>
-              <li>Answer for 30-60 seconds per question</li>
+              <li>Look directly at the camera for strong eye contact</li>
+              <li>Position yourself centered in the frame</li>
+              <li>Speak clearly at a natural pace (120-160 words/min)</li>
+              <li>Minimize filler words like "um", "uh", "like"</li>
+              <li>Show natural expressions and maintain good posture</li>
             </ul>
           </div>
         </div>

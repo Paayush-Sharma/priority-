@@ -7,15 +7,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
 
-from routers import upload, live, results, ai_interview
+from routers import upload, live, results, ai_interview, auth
 from database import engine, Base
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
-    title="AI Interview Analyzer",
-    description="Local AI-powered interview analysis system",
+    title="Intrex API",
+    description="AI-powered interview analysis system",
     version="1.0.0"
 )
 
@@ -33,6 +33,7 @@ os.makedirs("uploads", exist_ok=True)
 os.makedirs("temp", exist_ok=True)
 
 # Include routers
+app.include_router(auth.router, prefix="/api", tags=["authentication"])
 app.include_router(upload.router, prefix="/api", tags=["upload"])
 app.include_router(live.router, prefix="/api", tags=["live"])
 app.include_router(results.router, prefix="/api", tags=["results"])
@@ -40,7 +41,7 @@ app.include_router(ai_interview.router, prefix="/api", tags=["ai-interview"])
 
 @app.get("/")
 def read_root():
-    return {"message": "AI Interview Analyzer API", "status": "running"}
+    return {"message": "Intrex API", "status": "running"}
 
 @app.get("/health")
 def health_check():

@@ -9,6 +9,15 @@ const api = axios.create({
   },
 })
 
+// Add token to requests if available
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token')
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
 export const uploadVideo = async (file, onProgress) => {
   const formData = new FormData()
   formData.append('file', file)
@@ -40,6 +49,35 @@ export const getHistory = async (limit = 10) => {
 
 export const deleteInterview = async (id) => {
   const response = await api.delete(`/results/${id}`)
+  return response.data
+}
+
+// Authentication APIs
+export const signup = async (userData) => {
+  const response = await api.post('/auth/signup', userData)
+  return response.data
+}
+
+export const login = async (email, password) => {
+  const response = await api.post('/auth/login', { email, password })
+  return response.data
+}
+
+export const getCurrentUser = async () => {
+  const response = await api.get('/auth/me')
+  return response.data
+}
+
+export const uploadResume = async (file) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  
+  const response = await api.post('/auth/upload-resume', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  })
+  
   return response.data
 }
 

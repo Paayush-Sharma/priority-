@@ -39,7 +39,9 @@ async def live_interview(websocket: WebSocket):
         "eye_contact": [],
         "head_stability": [],
         "smile": [],
-        "face_detected": []
+        "engagement": [],
+        "face_detected": [],
+        "centering": []
     }
     
     try:
@@ -71,20 +73,28 @@ async def live_interview(websocket: WebSocket):
                 nparr = np.frombuffer(img_bytes, np.uint8)
                 frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                 
-                # Process frame (sample every 5th frame for performance)
-                if frame_count % 5 == 0:
+                # Process frame (sample every 3rd frame for better accuracy)
+                if frame_count % 3 == 0:
                     metrics = process_frame_facial(frame)
                     
                     if metrics:
                         accumulated_metrics["eye_contact"].append(metrics["eye_contact"])
                         accumulated_metrics["head_stability"].append(metrics["head_stability"])
                         accumulated_metrics["smile"].append(metrics["smile"])
+                        accumulated_metrics["engagement"].append(metrics.get("engagement", 0.5))
+                        accumulated_metrics["centering"].append(metrics.get("centering", 0.5))
                         accumulated_metrics["face_detected"].append(1)
                         
-                        # Send real-time feedback
+                        # Send real-time feedback with enhanced metrics
                         await websocket.send_json({
                             "type": "metrics",
-                            "data": metrics
+                            "data": {
+                                "eye_contact": metrics["eye_contact"],
+                                "head_stability": metrics["head_stability"],
+                                "smile": metrics["smile"],
+                                "engagement": metrics.get("engagement", 0.5),
+                                "centering": metrics.get("centering", 0.5)
+                            }
                         })
                     else:
                         accumulated_metrics["face_detected"].append(0)
@@ -94,6 +104,7 @@ async def live_interview(websocket: WebSocket):
                                 "eye_contact": 0,
                                 "head_stability": 0,
                                 "smile": 0,
+                                "engagement": 0,
                                 "no_face": True
                             }
                         })
@@ -105,21 +116,30 @@ async def live_interview(websocket: WebSocket):
         print(f"Session ID: {session_id}")
         # Calculate final metrics when connection closes
         if session_id:
-            if accumulated_metrics["eye_contact"]:
+            # Calculate face presence percentage
+            total_frames = len(accumulated_metrics["face_detected"])
+            face_presence = float(np.mean(accumulated_metrics["face_detected"])) if total_frames > 0 else 0.0
+            
+            # Only calculate metrics if face was detected in at least 50% of frames
+            if accumulated_metrics["eye_contact"] and face_presence >= 0.5:
                 final_metrics = {
                     "eye_contact_score": float(np.mean(accumulated_metrics["eye_contact"])),
                     "head_stability_score": float(np.mean(accumulated_metrics["head_stability"])),
                     "smile_score": float(np.mean(accumulated_metrics["smile"])),
-                    "face_presence_percentage": float(np.mean(accumulated_metrics["face_detected"]))
+                    "engagement_score": float(np.mean(accumulated_metrics["engagement"])),
+                    "face_presence_percentage": face_presence
                 }
+                print(f"Valid metrics calculated - Face presence: {face_presence*100:.1f}%")
             else:
-                # Default metrics if no face detected
+                # Insufficient face detection - set all metrics to 0
                 final_metrics = {
                     "eye_contact_score": 0.0,
                     "head_stability_score": 0.0,
                     "smile_score": 0.0,
-                    "face_presence_percentage": 0.0
+                    "engagement_score": 0.0,
+                    "face_presence_percentage": face_presence
                 }
+                print(f"WARNING: Insufficient face detection ({face_presence*100:.1f}%) - metrics set to 0")
             
             # Ensure session exists before updating
             if session_id not in active_sessions:
@@ -177,13 +197,14 @@ async def save_live_interview(
             # FALLBACK: Create a default session instead of failing
             print(f"Creating fallback session for {session_id}")
             active_sessions[session_id] = {
-                "metrics": {"eye_contact": [], "head_stability": [], "smile": [], "face_detected": []},
+                "metrics": {"eye_contact": [], "head_stability": [], "smile": [], "engagement": [], "face_detected": []},
                 "start_time": None,
                 "created_at": time.time(),
                 "final_metrics": {
                     "eye_contact_score": 0.0,
                     "head_stability_score": 0.0,
                     "smile_score": 0.0,
+                    "engagement_score": 0.0,
                     "face_presence_percentage": 0.0
                 },
                 "fallback": True
@@ -196,6 +217,7 @@ async def save_live_interview(
             "eye_contact_score": 0.0,
             "head_stability_score": 0.0,
             "smile_score": 0.0,
+            "engagement_score": 0.0,
             "face_presence_percentage": 0.0
         })
         
