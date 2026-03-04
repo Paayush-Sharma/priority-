@@ -88,8 +88,7 @@ function UploadForm() {
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
-      <h2 className="text-xl font-semibold mb-4">Upload Interview Video</h2>
+    <div className="glass rounded-2xl p-8 border border-surface-border">
       
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Drag and Drop Area */}
@@ -183,7 +182,7 @@ function UploadForm() {
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
               <div
-                className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
+                className="bg-gradient-accent h-2.5 rounded-full transition-all duration-300"
                 style={{ width: `${progress}%` }}
               >
                 <div className="h-full w-full bg-white/30 animate-pulse"></div>

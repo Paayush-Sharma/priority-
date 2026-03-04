@@ -1,29 +1,23 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import api from '../api/api'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Play, SkipForward, FileText, Briefcase } from 'lucide-react'
+import { startAIInterview, submitAnswer, completeInterview } from '../api/api'
 
 function LiveInterview() {
-  // Step management
-  const [step, setStep] = useState('setup') // setup, interview, results
-  
-  // Setup state
+  const [step, setStep] = useState('setup')
   const [resume, setResume] = useState(null)
   const [jobDescription, setJobDescription] = useState('')
   const [numQuestions, setNumQuestions] = useState(5)
   const [isGenerating, setIsGenerating] = useState(false)
-  
-  // Interview state
   const [aiSessionId, setAiSessionId] = useState(null)
   const [questions, setQuestions] = useState([])
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [answers, setAnswers] = useState([])
-  
-  // Recording state
   const [isRecording, setIsRecording] = useState(false)
   const [metrics, setMetrics] = useState(null)
   const [duration, setDuration] = useState(0)
   const [isSaving, setIsSaving] = useState(false)
-  const [sessionId, setSessionId] = useState(null)
   const [wsConnected, setWsConnected] = useState(false)
   const [faceDetectionCount, setFaceDetectionCount] = useState(0)
   const [totalFramesProcessed, setTotalFramesProcessed] = useState(0)
@@ -56,9 +50,7 @@ function LiveInterview() {
       alert('Please provide the job description for the company you want to interview with')
       return
     }
-    
     setIsGenerating(true)
-    
     try {
       const formData = new FormData()
       formData.append('resume', resume)
@@ -112,7 +104,6 @@ function LiveInterview() {
             sampleRate: 48000
           }
         })
-        
         streamRef.current = stream
         if (videoRef.current) {
           videoRef.current.srcObject = stream
@@ -129,11 +120,7 @@ function LiveInterview() {
           wsRef.current = new WebSocket('ws://localhost:8000/api/live')
           wsRef.current.onopen = () => {
             setWsConnected(true)
-            wsRef.current.send(JSON.stringify({
-              type: 'init',
-              session_id: newSessionId,
-              start_time: Date.now()
-            }))
+            wsRef.current.send(JSON.stringify({ type: 'init', session_id: newSessionId, start_time: Date.now() }))
           }
           wsRef.current.onmessage = (event) => {
             const data = JSON.parse(event.data)
@@ -166,8 +153,9 @@ function LiveInterview() {
           wsRef.current.onerror = () => {
             console.log('WebSocket error - continuing without facial analysis')
           }
+          wsRef.current.onerror = () => console.log('WebSocket error')
         } catch (wsError) {
-          console.log('Could not connect WebSocket - continuing without facial analysis')
+          console.log('Could not connect WebSocket')
         }
 
         // Send video frames if WebSocket connected (higher frequency for better accuracy)
@@ -187,26 +175,11 @@ function LiveInterview() {
         }, 150)  // Send frames every 150ms for better accuracy
       } catch (mediaError) {
         console.error('Media access error:', mediaError)
-        const proceed = confirm(
-          'Could not access camera/microphone. This may be because:\n\n' +
-          '• Permissions were denied\n' +
-          '• No camera/microphone is connected\n' +
-          '• Another app is using them\n\n' +
-          'Continue without video? (Audio-only interview)'
-        )
-        
-        if (!proceed) {
-          return
-        }
-        
-        // Continue without video - audio only
-        console.log('Continuing in audio-only mode')
+        const proceed = confirm('Could not access camera/microphone. Continue without video?')
+        if (!proceed) return
       }
-
-      // Start recording first question
       startTimeRef.current = Date.now()
       startQuestionRecording()
-      
     } catch (error) {
       console.error('Error starting interview:', error)
       alert('Failed to start interview: ' + error.message)
@@ -215,31 +188,21 @@ function LiveInterview() {
 
   const startQuestionRecording = () => {
     audioChunksRef.current = []
-    if (!startTimeRef.current) {
-      startTimeRef.current = Date.now()
-    }
-    
-    // Only setup MediaRecorder if we have a stream
+    if (!startTimeRef.current) startTimeRef.current = Date.now()
     if (streamRef.current) {
       try {
         const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm'
         mediaRecorderRef.current = new MediaRecorder(streamRef.current, { mimeType })
-        
         mediaRecorderRef.current.ondataavailable = (event) => {
-          if (event.data.size > 0) {
-            audioChunksRef.current.push(event.data)
-          }
+          if (event.data.size > 0) audioChunksRef.current.push(event.data)
         }
-        
         mediaRecorderRef.current.start(1000)
       } catch (error) {
         console.error('Could not start MediaRecorder:', error)
       }
     }
-    
     setIsRecording(true)
     setDuration(0)
-    
     timerIntervalRef.current = setInterval(() => {
       setDuration(Math.floor((Date.now() - startTimeRef.current) / 1000))
     }, 1000)
@@ -270,70 +233,29 @@ function LiveInterview() {
       alert('Please answer for at least 5 seconds')
       return
     }
-    
-    // Stop recording
     if (timerIntervalRef.current) clearInterval(timerIntervalRef.current)
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop()
     }
     setIsRecording(false)
-    
-    // Wait for audio chunks
     await new Promise(resolve => setTimeout(resolve, 500))
-    
-    // Submit answer
     setIsSaving(true)
     try {
-      // If no audio was recorded, create a dummy answer
-      let answerText = `Sample answer for question ${currentQuestionIndex + 1}`
-      
+      let response
       if (audioChunksRef.current.length > 0) {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
-        const formData = new FormData()
-        formData.append('session_id', aiSessionId)
-        formData.append('question_index', currentQuestionIndex)
-        formData.append('answer_audio', audioBlob, 'answer.webm')
-        formData.append('answer_duration', duration)
-        
-        const response = await api.post('/ai-interview/submit-answer', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        })
-        
-        if (response.data.success) {
-          const newAnswer = {
-            question: questions[currentQuestionIndex].question,
-            answer: response.data.answer_text,
-            score: response.data.analysis.score,
-            feedback: response.data.analysis.feedback,
-            metrics: response.data.analysis.metrics
-          }
-          setAnswers([...answers, newAnswer])
-        }
+        response = await submitAnswer(aiSessionId, currentQuestionIndex, audioBlob, null, duration)
       } else {
-        // No audio - submit text answer
-        const formData = new FormData()
-        formData.append('session_id', aiSessionId)
-        formData.append('question_index', currentQuestionIndex)
-        formData.append('answer_text', answerText)
-        formData.append('answer_duration', duration)
-        
-        const response = await api.post('/ai-interview/submit-answer', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        })
-        
-        if (response.data.success) {
-          const newAnswer = {
-            question: questions[currentQuestionIndex].question,
-            answer: response.data.answer_text,
-            score: response.data.analysis.score,
-            feedback: response.data.analysis.feedback,
-            metrics: response.data.analysis.metrics
-          }
-          setAnswers([...answers, newAnswer])
-        }
+        response = await submitAnswer(aiSessionId, currentQuestionIndex, null, `Answer ${currentQuestionIndex + 1}`, duration)
       }
-      
-      // Move to next question or finish
+      if (response.success) {
+        setAnswers([...answers, {
+          question: questions[currentQuestionIndex].question,
+          answer: response.answer_text,
+          score: response.analysis.score,
+          feedback: response.analysis.feedback
+        }])
+      }
       if (currentQuestionIndex < questions.length - 1) {
         setCurrentQuestionIndex(currentQuestionIndex + 1)
         // Reset face detection counters for next question
@@ -345,53 +267,37 @@ function LiveInterview() {
       }
     } catch (error) {
       console.error('Error submitting answer:', error)
-      alert('Failed to submit answer: ' + (error.response?.data?.detail || error.message))
+      alert('Failed to submit answer')
     } finally {
       setIsSaving(false)
     }
   }
 
   const finishInterview = async () => {
-    // Stop everything
     if (frameIntervalRef.current) clearInterval(frameIntervalRef.current)
     if (timerIntervalRef.current) clearInterval(timerIntervalRef.current)
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop()
-    }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop())
-    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') mediaRecorderRef.current.stop()
+    if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop())
     if (wsRef.current) wsRef.current.close()
-    
     setIsRecording(false)
     setWsConnected(false)
-    
-    // Get final results
     try {
-      console.log('Completing interview for session:', aiSessionId)
-      
-      const response = await api.post('/ai-interview/complete', {
-        session_id: aiSessionId
-      })
-      
-      console.log('Complete response:', response.data)
-      
-      if (response.data.success) {
-        setOverallResults(response.data.overall_results)
-        setAnswers(response.data.detailed_answers)
+      const response = await completeInterview(aiSessionId)
+      if (response.success) {
+        setOverallResults(response.overall_results)
+        setAnswers(response.detailed_answers)
         setStep('results')
       }
     } catch (error) {
       console.error('Error completing interview:', error)
-      console.error('Error response:', error.response?.data)
-      alert('Failed to get results: ' + (error.response?.data?.detail || error.message))
+      alert('Failed to get results')
     }
   }
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60)
     const secs = seconds % 60
-    return `${mins}:${secs.toString().padStart(2, '0')}`
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
   }
 
   useEffect(() => {
@@ -400,37 +306,13 @@ function LiveInterview() {
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current)
       if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop())
       if (wsRef.current) wsRef.current.close()
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop()
-      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') mediaRecorderRef.current.stop()
     }
   }, [])
 
+
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-semibold">
-          {step === 'setup' && '🎯 AI-Powered Live Interview'}
-          {step === 'interview' && '🎤 Live Interview in Progress'}
-          {step === 'results' && '📊 Interview Results'}
-        </h2>
-        <div className="flex items-center gap-4">
-          {wsConnected && step === 'interview' && (
-            <div className="flex items-center gap-2 text-sm text-green-600">
-              <div className="w-2 h-2 bg-green-600 rounded-full"></div>
-              <span>Camera Active</span>
-            </div>
-          )}
-          {isRecording && (
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-red-600 rounded-full animate-pulse"></div>
-              <span className="text-lg font-mono font-semibold">{formatTime(duration)}</span>
-            </div>
-          )}
-        </div>
-      </div>
-      
-      {/* Setup Step */}
+    <AnimatePresence mode="wait">
       {step === 'setup' && (
         <form onSubmit={handleStartInterview} className="space-y-6">
           <div className="bg-blue-50 p-4 rounded-lg mb-4">
@@ -479,15 +361,88 @@ function LiveInterview() {
               The AI will analyze your resume against this job description to generate relevant questions
             </p>
           </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Number of Questions
-            </label>
-            <select
-              value={numQuestions}
-              onChange={(e) => setNumQuestions(parseInt(e.target.value))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+
+          <form onSubmit={handleStartInterview} className="space-y-6">
+            <div>
+              <label className="flex items-center space-x-2 text-sm font-medium text-gray-300 mb-3">
+                <FileText className="w-4 h-4" />
+                <span>Upload Resume (PDF, DOCX, or TXT)</span>
+              </label>
+              <div className="relative">
+                <input
+                  type="file"
+                  accept=".pdf,.docx,.doc,.txt"
+                  onChange={(e) => setResume(e.target.files[0])}
+                  className="block w-full text-sm text-gray-300 file:mr-4 file:py-3 file:px-6
+                    file:rounded-xl file:border-0 file:text-sm file:font-semibold
+                    file:bg-gradient-accent file:text-white hover:file:shadow-xl
+                    file:transition-all file:cursor-pointer
+                    bg-white/5 border border-white/10 rounded-xl p-3
+                    hover:border-blue-500/50 transition-colors cursor-pointer"
+                  required
+                />
+                {resume && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="mt-3 flex items-center space-x-2 text-sm text-green-400"
+                  >
+                    <div className="w-2 h-2 bg-green-400 rounded-full" />
+                    <span>{resume.name}</span>
+                  </motion.div>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="flex items-center space-x-2 text-sm font-medium text-gray-300 mb-3">
+                <Briefcase className="w-4 h-4" />
+                <span>Job Description</span>
+              </label>
+              <textarea
+                value={jobDescription}
+                onChange={(e) => setJobDescription(e.target.value)}
+                rows={6}
+                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl 
+                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                  text-white placeholder-gray-500 transition-all resize-none"
+                placeholder="Paste the job description here..."
+                required
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-gray-300 mb-3 block">
+                Number of Questions
+              </label>
+              <div className="grid grid-cols-3 gap-3">
+                {[3, 5, 7].map((num) => (
+                  <motion.button
+                    key={num}
+                    type="button"
+                    onClick={() => setNumQuestions(num)}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    className={`py-3 px-4 rounded-xl font-semibold transition-all ${
+                      numQuestions === num
+                        ? 'bg-gradient-accent text-white professional-glow'
+                        : 'glass glass-hover text-gray-300'
+                    }`}
+                  >
+                    {num}
+                  </motion.button>
+                ))}
+              </div>
+            </div>
+
+            <motion.button
+              type="submit"
+              disabled={isGenerating}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="w-full py-4 px-6 bg-gradient-accent text-white rounded-xl font-semibold 
+                text-lg flex items-center justify-center space-x-2 professional-glow
+                disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               <option value={3}>3 Questions</option>
               <option value={5}>5 Questions</option>
@@ -517,8 +472,7 @@ function LiveInterview() {
           )}
         </form>
       )}
-      
-      {/* Interview Step */}
+
       {step === 'interview' && (
         <div className="space-y-4">
           {/* Interview Context Summary */}
@@ -812,48 +766,68 @@ function LiveInterview() {
             </div>
           )}
 
-          {/* Controls */}
-          <div className="flex gap-4">
-            {!isRecording && answers.length === 0 && (
-              <button
-                onClick={startInterview}
-                className="flex-1 bg-green-600 text-white py-3 px-4 rounded-md
-                  hover:bg-green-700 transition-colors duration-200 font-semibold"
-              >
-                🎤 Start Interview
-              </button>
-            )}
-            
-            {isRecording && !isSaving && (
-              <button
-                onClick={finishQuestion}
-                disabled={duration < 5}
-                className="flex-1 bg-blue-600 text-white py-3 px-4 rounded-md
-                  hover:bg-blue-700 transition-colors duration-200 font-semibold
-                  disabled:bg-gray-400 disabled:cursor-not-allowed"
-              >
-                {duration < 5 ? `Answer for at least 5 seconds (${5 - duration}s)` : '✓ Next Question'}
-              </button>
-            )}
-            
-            {isSaving && (
-              <div className="flex-1 bg-gray-400 text-white py-3 px-4 rounded-md text-center font-semibold">
-                <div className="flex items-center justify-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Analyzing answer...
+            {/* Controls */}
+            <div className="flex space-x-3">
+              {!isRecording && answers.length === 0 ? (
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={startInterview}
+                  className="flex-1 px-6 py-3 bg-gradient-accent text-white rounded-xl font-semibold 
+                    flex items-center justify-center space-x-2 professional-glow"
+                >
+                  <Play className="w-5 h-5" />
+                  <span>Start Interview</span>
+                </motion.button>
+              ) : isRecording && !isSaving ? (
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={finishQuestion}
+                  disabled={duration < 5}
+                  className="flex-1 px-6 py-3 glass glass-hover text-white rounded-xl font-semibold 
+                    flex items-center justify-center space-x-2 disabled:opacity-50"
+                >
+                  <SkipForward className="w-5 h-5" />
+                  <span>{duration < 5 ? `Wait ${5 - duration}s` : 'Next Question'}</span>
+                </motion.button>
+              ) : isSaving ? (
+                <div className="flex-1 px-6 py-3 glass text-white rounded-xl font-semibold 
+                  flex items-center justify-center space-x-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Analyzing...</span>
                 </div>
-              </div>
+              ) : null}
+            </div>
+
+            {answers.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-4 bg-green-500/10 border border-green-500/30 rounded-xl p-3"
+              >
+                <div className="flex items-center space-x-2 text-sm text-green-400">
+                  <div className="w-2 h-2 bg-green-400 rounded-full" />
+                  <span>{answers.length} of {questions.length} questions answered</span>
+                </div>
+              </motion.div>
             )}
           </div>
 
-          {/* Progress */}
-          {answers.length > 0 && (
-            <div className="bg-green-50 p-4 rounded-lg">
-              <p className="text-sm font-medium text-green-800">
-                ✓ {answers.length} of {questions.length} questions answered
-              </p>
+          {/* Right Panel - User Video */}
+          <div className="glass rounded-2xl p-8 border border-white/10">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="font-semibold text-white">Your Video</h3>
+                <p className="text-sm text-gray-400">AI is analyzing in real-time</p>
+              </div>
+              {wsConnected && (
+                <div className="flex items-center space-x-2 text-sm text-green-400">
+                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+                  <span>Live</span>
+                </div>
+              )}
             </div>
-          )}
 
           <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-4 rounded-lg border border-blue-200">
             <p className="text-sm text-gray-700 font-semibold mb-2 flex items-center gap-2">
@@ -870,52 +844,78 @@ function LiveInterview() {
               <li>Show natural expressions and maintain good posture</li>
             </ul>
           </div>
-        </div>
+        </motion.div>
       )}
-      
-      {/* Results Step */}
+
       {step === 'results' && overallResults && (
-        <div className="space-y-6">
-          <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white p-6 rounded-lg">
-            <h3 className="text-2xl font-bold mb-2">🎉 Interview Complete!</h3>
-            <div className="grid grid-cols-3 gap-4 mt-4">
-              <div className="text-center">
-                <p className="text-3xl font-bold">{overallResults.overall_score}</p>
-                <p className="text-sm opacity-90">Overall Score</p>
+        <motion.div
+          key="results"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          className="space-y-6"
+        >
+          <motion.div
+            initial={{ scale: 0.9 }}
+            animate={{ scale: 1 }}
+            className="bg-gradient-to-r from-blue-500 to-purple-600 text-white p-8 rounded-2xl"
+          >
+            <div className="text-center mb-6">
+              <span className="text-6xl mb-4 block">🎉</span>
+              <h3 className="text-3xl font-bold mb-2">Interview Complete!</h3>
+              <p className="text-blue-100">Here's how you performed</p>
+            </div>
+            <div className="grid grid-cols-3 gap-6">
+              <div className="text-center bg-white/10 rounded-xl p-4 backdrop-blur-sm">
+                <p className="text-5xl font-bold mb-2">{overallResults.overall_score}</p>
+                <p className="text-sm opacity-90">Overall</p>
               </div>
-              <div className="text-center">
-                <p className="text-3xl font-bold">{overallResults.technical_score}</p>
+              <div className="text-center bg-white/10 rounded-xl p-4 backdrop-blur-sm">
+                <p className="text-5xl font-bold mb-2">{overallResults.technical_score}</p>
                 <p className="text-sm opacity-90">Technical</p>
               </div>
-              <div className="text-center">
-                <p className="text-3xl font-bold">{overallResults.behavioral_score}</p>
+              <div className="text-center bg-white/10 rounded-xl p-4 backdrop-blur-sm">
+                <p className="text-5xl font-bold mb-2">{overallResults.behavioral_score}</p>
                 <p className="text-sm opacity-90">Behavioral</p>
               </div>
             </div>
-          </div>
-          
+          </motion.div>
+
           <div className="space-y-4">
-            <h4 className="text-lg font-semibold">Detailed Feedback</h4>
+            <h4 className="text-xl font-semibold text-white">Detailed Feedback</h4>
             {answers.map((answer, index) => (
-              <div key={index} className="border border-gray-200 rounded-lg p-4">
-                <p className="font-medium text-gray-900 mb-2">Q{index + 1}: {answer.question}</p>
-                <p className="text-sm text-gray-600 mb-2">Your answer: {answer.answer.substring(0, 150)}...</p>
-                <div className="flex items-center gap-4 mt-3">
-                  <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                    answer.score >= 80 ? 'bg-green-100 text-green-800' :
-                    answer.score >= 60 ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-red-100 text-red-800'
-                  }`}>
-                    Score: {answer.score}/100
-                  </span>
-                  <p className="text-sm text-gray-600">{answer.feedback}</p>
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.1 }}
+                className="glass rounded-xl p-6 border border-white/10"
+              >
+                <div className="flex items-start space-x-4">
+                  <div className="w-8 h-8 bg-gradient-accent rounded-lg flex items-center justify-center flex-shrink-0">
+                    <span className="text-white font-bold text-sm">{index + 1}</span>
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-white mb-3">{answer.question}</p>
+                    <p className="text-sm text-gray-400 mb-4">{answer.answer?.substring(0, 150)}...</p>
+                    <div className="flex items-center space-x-4">
+                      <span className={`px-4 py-2 rounded-xl text-sm font-semibold ${
+                        answer.score >= 80 ? 'bg-green-500/20 text-green-400 border border-green-500/30' :
+                        answer.score >= 60 ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' :
+                        'bg-red-500/20 text-red-400 border border-red-500/30'
+                      }`}>
+                        Score: {answer.score}/100
+                      </span>
+                      <p className="text-sm text-gray-400">{answer.feedback}</p>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              </motion.div>
             ))}
           </div>
-          
-          <div className="flex gap-4">
-            <button
+
+          <div className="flex space-x-4">
+            <motion.button
               onClick={() => {
                 setStep('setup')
                 setAiSessionId(null)
@@ -926,22 +926,24 @@ function LiveInterview() {
                 setResume(null)
                 setJobDescription('')
               }}
-              className="flex-1 bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 
-                transition-colors duration-200 font-semibold"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="flex-1 px-6 py-3 bg-gradient-accent text-white rounded-xl font-semibold professional-glow"
             >
               Start New Interview
-            </button>
-            <button
+            </motion.button>
+            <motion.button
               onClick={() => navigate('/')}
-              className="flex-1 bg-gray-300 text-gray-700 py-3 px-4 rounded-md hover:bg-gray-400 
-                transition-colors duration-200 font-semibold"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="flex-1 px-6 py-3 glass glass-hover text-white rounded-xl font-semibold"
             >
               Back to Home
-            </button>
+            </motion.button>
           </div>
-        </div>
+        </motion.div>
       )}
-    </div>
+    </AnimatePresence>
   )
 }
 

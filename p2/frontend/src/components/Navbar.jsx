@@ -66,12 +66,12 @@ const Navbar = () => {
               </span>
             </Link>
             <Link
-              to="/upload"
+              to="/live-interview"
               className={`text-sm font-medium transition-colors ${
-                isActive('/upload') ? 'text-white' : 'text-gray-400 hover:text-white'
+                isActive('/live-interview') ? 'text-white' : 'text-gray-400 hover:text-white'
               }`}
             >
-              Upload
+              Live Interview
             </Link>
             <Link
               to="/dashboard"
@@ -145,18 +145,18 @@ const Navbar = () => {
               Home
             </Link>
             <Link
+              to="/home"
+              className="block text-sm font-medium text-gray-400 hover:text-white"
+              onClick={() => setIsOpen(false)}
+            >
+              Interviews
+            </Link>
+            <Link
               to="/live-interview"
               className="block text-sm font-medium text-gray-400 hover:text-white"
               onClick={() => setIsOpen(false)}
             >
               Live Interview
-            </Link>
-            <Link
-              to="/upload"
-              className="block text-sm font-medium text-gray-400 hover:text-white"
-              onClick={() => setIsOpen(false)}
-            >
-              Upload
             </Link>
             <Link
               to="/dashboard"

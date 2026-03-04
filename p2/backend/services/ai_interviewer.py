@@ -1,7 +1,7 @@
 """
 AI Interviewer Service
 Generates interview questions based on resume and job description
-Analyzes candidate answers for knowledge assessment
+Analyzes candidate answers for knowledge assessment using Google Gemini API
 """
 import re
 import json
@@ -9,14 +9,55 @@ from typing import List, Dict, Tuple
 import PyPDF2
 import docx
 from io import BytesIO
+import os
+
+# Try to import Gemini - handle both old and new packages
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    try:
+        from google import genai
+        GEMINI_AVAILABLE = True
+    except ImportError:
+        GEMINI_AVAILABLE = False
+        genai = None
+
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Get API key from environment
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 
 # For now, using rule-based approach. Can be upgraded to use OpenAI/Anthropic/Ollama
 # To use LLM APIs, add API keys to .env and uncomment the relevant sections
 
 class AIInterviewer:
-    """Handles question generation and answer analysis"""
+    """Handles question generation and answer analysis using Gemini API"""
     
     def __init__(self):
+        # Configure Gemini API
+        self.use_gemini = GEMINI_AVAILABLE and bool(GEMINI_API_KEY) and GEMINI_API_KEY != "paste_your_gemini_api_key_here"
+        if self.use_gemini:
+            try:
+                genai.configure(api_key=GEMINI_API_KEY)
+                self.model = genai.GenerativeModel(GEMINI_MODEL)
+                print(f"✓ Gemini API initialized with model: {GEMINI_MODEL}")
+            except Exception as e:
+                print(f"⚠ Failed to initialize Gemini API: {e}")
+                self.use_gemini = False
+                self.model = None
+        else:
+            if not GEMINI_AVAILABLE:
+                print("⚠ Gemini package not installed. Using rule-based fallback.")
+            elif not GEMINI_API_KEY or GEMINI_API_KEY == "paste_your_gemini_api_key_here":
+                print("⚠ No Gemini API key found. Using rule-based fallback.")
+            self.model = None
+        
+        # Fallback question templates for when API is not available
         self.question_templates = {
             "technical": [
                 "Can you explain your experience with {skill}?",
@@ -94,10 +135,83 @@ class AIInterviewer:
     ) -> List[Dict[str, str]]:
         """
         Generate interview questions based on resume and job description
+        Uses Gemini API if available, otherwise falls back to rule-based generation
         
         Returns:
             List of question dictionaries with 'question' and 'type' keys
         """
+        if self.use_gemini and self.model:
+            try:
+                return self._generate_questions_with_gemini(resume_text, job_description, num_questions)
+            except Exception as e:
+                print(f"⚠ Gemini API error: {e}. Falling back to rule-based generation.")
+                return self._generate_questions_fallback(resume_text, job_description, num_questions)
+        else:
+            return self._generate_questions_fallback(resume_text, job_description, num_questions)
+    
+    def _generate_questions_with_gemini(
+        self, 
+        resume_text: str, 
+        job_description: str, 
+        num_questions: int
+    ) -> List[Dict[str, str]]:
+        """Generate questions using Gemini API"""
+        print(f"🤖 Using Gemini API to generate {num_questions} questions...")
+        prompt = f"""You are an expert technical interviewer. Based on the candidate's resume and the job description, generate {num_questions} relevant interview questions.
+
+Resume:
+{resume_text[:2000]}
+
+Job Description:
+{job_description[:1000]}
+
+Generate exactly {num_questions} interview questions that:
+1. Test technical skills mentioned in the resume
+2. Assess fit for the job requirements
+3. Include a mix of technical, behavioral, and role-specific questions
+4. Are clear and specific
+
+Return ONLY a JSON array in this exact format:
+[
+  {{"question": "Question text here?", "type": "technical", "topic": "skill name"}},
+  {{"question": "Question text here?", "type": "behavioral", "topic": "topic name"}},
+  ...
+]
+
+Types can be: "technical", "behavioral", or "role_specific"
+"""
+        
+        response = self.model.generate_content(prompt)
+        response_text = response.text.strip()
+        print(f"✓ Gemini API responded successfully")
+        
+        # Extract JSON from response (handle markdown code blocks)
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0].strip()
+        
+        questions = json.loads(response_text)
+        
+        # Validate and ensure correct format
+        validated_questions = []
+        for q in questions[:num_questions]:
+            if isinstance(q, dict) and "question" in q:
+                validated_questions.append({
+                    "question": q.get("question", ""),
+                    "type": q.get("type", "general"),
+                    "topic": q.get("topic", "general")
+                })
+        
+        return validated_questions if validated_questions else self._generate_questions_fallback(resume_text, job_description, num_questions)
+    
+    def _generate_questions_fallback(
+        self, 
+        resume_text: str, 
+        job_description: str, 
+        num_questions: int
+    ) -> List[Dict[str, str]]:
+        """Fallback rule-based question generation"""
         questions = []
         skills = self.extract_skills(resume_text, job_description)
         
@@ -160,10 +274,94 @@ class AIInterviewer:
     ) -> Dict[str, any]:
         """
         Analyze candidate's answer and provide scoring
+        Uses Gemini API if available, otherwise falls back to rule-based analysis
         
         Returns:
             Dictionary with score, feedback, and metrics
         """
+        if self.use_gemini and self.model:
+            try:
+                return self._analyze_answer_with_gemini(question, answer_text, answer_duration)
+            except Exception as e:
+                print(f"⚠ Gemini API error: {e}. Falling back to rule-based analysis.")
+                return self._analyze_answer_fallback(question, answer_text, answer_duration)
+        else:
+            return self._analyze_answer_fallback(question, answer_text, answer_duration)
+    
+    def _analyze_answer_with_gemini(
+        self, 
+        question: Dict[str, str], 
+        answer_text: str,
+        answer_duration: float
+    ) -> Dict[str, any]:
+        """Analyze answer using Gemini API"""
+        print(f"🤖 Using Gemini API to analyze answer...")
+        prompt = f"""You are an expert interviewer evaluating a candidate's answer.
+
+Question: {question['question']}
+Question Type: {question.get('type', 'general')}
+Topic: {question.get('topic', 'general')}
+
+Candidate's Answer:
+{answer_text}
+
+Answer Duration: {answer_duration:.1f} seconds
+
+Evaluate this answer and provide:
+1. Overall score (0-100)
+2. Relevance score (0-100) - How well does it address the question?
+3. Completeness score (0-100) - Is the answer thorough?
+4. Clarity score (0-100) - Is it well-articulated?
+5. Constructive feedback (2-3 sentences)
+
+Return ONLY a JSON object in this exact format:
+{{
+  "score": 85,
+  "relevance": 90,
+  "completeness": 80,
+  "clarity": 85,
+  "feedback": "Your feedback here."
+}}
+"""
+        
+        response = self.model.generate_content(prompt)
+        response_text = response.text.strip()
+        print(f"✓ Gemini API analyzed answer successfully")
+        
+        # Extract JSON from response
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0].strip()
+        
+        analysis = json.loads(response_text)
+        
+        # Validate scores
+        score = max(0, min(100, int(analysis.get("score", 50))))
+        relevance = max(0, min(100, int(analysis.get("relevance", 50))))
+        completeness = max(0, min(100, int(analysis.get("completeness", 50))))
+        clarity = max(0, min(100, int(analysis.get("clarity", 50))))
+        
+        word_count = len(answer_text.split())
+        
+        return {
+            "score": score,
+            "feedback": analysis.get("feedback", "Good effort."),
+            "metrics": {
+                "relevance": relevance,
+                "completeness": completeness,
+                "clarity": clarity
+            },
+            "word_count": word_count
+        }
+    
+    def _analyze_answer_fallback(
+        self, 
+        question: Dict[str, str], 
+        answer_text: str,
+        answer_duration: float
+    ) -> Dict[str, any]:
+        """Fallback rule-based answer analysis"""
         if not answer_text or len(answer_text.strip()) < 10:
             return {
                 "score": 0,

@@ -28,7 +28,6 @@ function App() {
         <Route path="/video-upload" element={<VideoUpload />} />
         <Route path="/test-upload" element={<TestUpload />} />
         <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/home" element={<Home />} />
         <Route path="/results/:id" element={<Results />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
