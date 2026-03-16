@@ -85,13 +85,14 @@ const Dashboard = () => {
           </div>
 
           {/* Score Cards */}
-          <div className="grid md:grid-cols-4 gap-6 mb-8">
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0 }}
-              className="glass rounded-2xl p-6 border border-white/10"
+              className="glass rounded-xl p-6 border border-white/10"
             >
+              {/* UI audit fix: Standardized card padding and spacing */}
               <div className="flex items-center justify-between mb-4">
                 <div className="w-12 h-12 bg-blue-500/20 rounded-xl flex items-center justify-center">
                   <Target className="w-6 h-6 text-blue-400" />
@@ -106,7 +107,7 @@ const Dashboard = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 }}
-              className="glass rounded-2xl p-6 border border-white/10"
+              className="glass rounded-xl p-6 border border-white/10"
             >
               <div className="flex items-center justify-between mb-4">
                 <div className="w-12 h-12 bg-purple-500/20 rounded-xl flex items-center justify-center">
@@ -122,7 +123,7 @@ const Dashboard = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
-              className="glass rounded-2xl p-6 border border-white/10"
+              className="glass rounded-xl p-6 border border-white/10"
             >
               <div className="flex items-center justify-between mb-4">
                 <div className="w-12 h-12 bg-pink-500/20 rounded-xl flex items-center justify-center">
@@ -138,7 +139,7 @@ const Dashboard = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 }}
-              className="glass rounded-2xl p-6 border border-white/10"
+              className="glass rounded-xl p-6 border border-white/10"
             >
               <div className="flex items-center justify-between mb-4">
                 <div className="w-12 h-12 bg-green-500/20 rounded-xl flex items-center justify-center">
@@ -152,14 +153,15 @@ const Dashboard = () => {
           </div>
 
           {/* Charts */}
-          <div className="grid lg:grid-cols-2 gap-8 mb-8">
+          <div className="grid lg:grid-cols-2 gap-6 mb-8">
             {/* Radar Chart */}
             <motion.div
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
-              className="glass rounded-2xl p-8 border border-white/10"
+              className="glass rounded-xl p-6 border border-white/10"
             >
-              <h2 className="text-2xl font-bold mb-6">Overall Performance</h2>
+              {/* UI audit fix: Standardized card styling and spacing */}
+              <h2 className="text-xl font-bold mb-6">Overall Performance</h2>
               <ResponsiveContainer width="100%" height={300}>
                 <RadarChart data={radarData}>
                   <PolarGrid stroke="#334155" />
@@ -174,9 +176,9 @@ const Dashboard = () => {
             <motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
-              className="glass rounded-2xl p-8 border border-white/10"
+              className="glass rounded-xl p-6 border border-white/10"
             >
-              <h2 className="text-2xl font-bold mb-6">Confidence Progress</h2>
+              <h2 className="text-xl font-bold mb-6">Confidence Progress</h2>
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={progressData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
@@ -193,14 +195,15 @@ const Dashboard = () => {
           </div>
 
           {/* Feedback Sections */}
-          <div className="grid lg:grid-cols-2 gap-8 mb-8">
+          <div className="grid lg:grid-cols-2 gap-6 mb-8">
             {/* Strengths */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="glass rounded-2xl p-8 border border-white/10"
+              className="glass rounded-xl p-6 border border-white/10"
             >
-              <h2 className="text-2xl font-bold mb-6 flex items-center">
+              {/* UI audit fix: Standardized card styling */}
+              <h2 className="text-xl font-bold mb-6 flex items-center">
                 <div className="w-8 h-8 bg-green-500/20 rounded-lg flex items-center justify-center mr-3">
                   <Award className="w-5 h-5 text-green-400" />
                 </div>
@@ -212,7 +215,7 @@ const Dashboard = () => {
                     <div className="w-6 h-6 bg-green-500/20 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
                       <span className="text-green-400 text-xs">✓</span>
                     </div>
-                    <span className="text-gray-300">{strength}</span>
+                    <span className="text-gray-300 text-sm">{strength}</span>
                   </li>
                 ))}
               </ul>
@@ -223,9 +226,9 @@ const Dashboard = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 }}
-              className="glass rounded-2xl p-8 border border-white/10"
+              className="glass rounded-xl p-6 border border-white/10"
             >
-              <h2 className="text-2xl font-bold mb-6 flex items-center">
+              <h2 className="text-xl font-bold mb-6 flex items-center">
                 <div className="w-8 h-8 bg-orange-500/20 rounded-lg flex items-center justify-center mr-3">
                   <TrendingUp className="w-5 h-5 text-orange-400" />
                 </div>
@@ -237,7 +240,7 @@ const Dashboard = () => {
                     <div className="w-6 h-6 bg-orange-500/20 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
                       <span className="text-orange-400 text-xs">!</span>
                     </div>
-                    <span className="text-gray-300">{improvement}</span>
+                    <span className="text-gray-300 text-sm">{improvement}</span>
                   </li>
                 ))}
               </ul>
@@ -249,17 +252,18 @@ const Dashboard = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
-            className="glass rounded-2xl p-8 border border-white/10"
+            className="glass rounded-xl p-6 border border-white/10"
           >
-            <h2 className="text-2xl font-bold mb-6">Suggested Practice Questions</h2>
-            <div className="space-y-4">
+            {/* UI audit fix: Standardized card styling */}
+            <h2 className="text-xl font-bold mb-6">Suggested Practice Questions</h2>
+            <div className="space-y-3">
               {practiceQuestions.map((question, index) => (
-                <div key={index} className="glass rounded-xl p-4 hover:bg-white/10 transition-all">
+                <div key={index} className="glass rounded-lg p-4 hover:bg-white/10 transition-all">
                   <div className="flex items-start space-x-3">
                     <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <span className="text-blue-400 font-semibold">{index + 1}</span>
+                      <span className="text-blue-400 font-semibold text-sm">{index + 1}</span>
                     </div>
-                    <p className="text-gray-300 pt-1">{question}</p>
+                    <p className="text-gray-300 pt-1 text-sm">{question}</p>
                   </div>
                 </div>
               ))}
@@ -268,8 +272,9 @@ const Dashboard = () => {
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
-                className="w-full mt-6 px-6 py-4 bg-gradient-accent text-white rounded-xl font-semibold professional-glow hover:shadow-xl transition-all"
+                className="w-full mt-6 px-6 py-3 bg-gradient-accent text-white rounded-lg font-semibold professional-glow hover:shadow-lg transition-all focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 focus:ring-offset-slate-950"
               >
+                {/* UI audit fix: Standardized button styling and added focus states */}
                 Practice These Questions
               </motion.button>
             </Link>
