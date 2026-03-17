@@ -5,7 +5,8 @@ import App from './App.jsx'
 import ErrorBoundary from './components/ErrorBoundary'
 import './index.css'
 
-const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
+const root = document.getElementById('root')
+console.log('Root element:', root)
 
 const appTree = (
   <React.StrictMode>
