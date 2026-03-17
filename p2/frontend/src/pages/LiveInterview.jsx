@@ -1,6 +1,8 @@
-import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Home, Sparkles } from 'lucide-react'
+import React, { useState, useRef, useEffect } from 'react';
+import { motion } from 'framer-motion';
+import { Video, Mic, MicOff, VideoOff, Play, Square, SkipForward, ArrowLeft, CheckCircle } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
+import PolishedNavbar from '../components/PolishedNavbar';
 
 const LiveInterview = () => {
   const navigate = useNavigate()
@@ -120,21 +122,13 @@ const LiveInterview = () => {
                     required
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    📅 Years of Experience
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="50"
-                    value={formData.yearsOfExperience}
-                    onChange={(e) => setFormData(prev => ({ ...prev, yearsOfExperience: parseInt(e.target.value) || 0 }))}
-                    className="w-full px-4 py-3 bg-surface-elevated border-2 border-surface-border rounded-xl 
-                      focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                      text-white placeholder-gray-500 transition-all"
-                    required
-                  />
+              </div>
+
+              {/* Segmented Progress Indicator */}
+              <div className="mb-8">
+                <div className="flex justify-between text-sm text-gray-400 mb-3">
+                  <span>Progress</span>
+                  <span>{Math.round(((currentQuestion + 1) / questions.length) * 100)}%</span>
                 </div>
               </div>
 
